@@ -14,7 +14,7 @@ import org.json.JSONObject
  * Key improvements:
  * - Gesture tap fallback when node click fails
  * - Text-based node lookup when node_id doesn't match (screen changed)
- * - Hindi status messages
+ * - Bangla status messages
  * - tap_xy action for direct coordinate taps
  * - swipe action for custom swipe gestures
  */
@@ -96,7 +96,7 @@ object ActionExecutor {
     }
 
     /**
-     * Execute an action. Returns Hindi status string.
+     * Execute an action. Returns Bangla status string.
      */
     fun execute(action: AgentAction, nodes: List<UiTreeExtractor.UiNode>): String {
         val service = AutoAgentService.instance
@@ -124,7 +124,7 @@ object ActionExecutor {
             "select_all" -> executeSelectAll(action, nodes, service)
             "open_notifications" -> { service.openNotifications(); "✅ Notifications khol diya" }
             "wait" -> "⏳ Screen load ho raha hai..."
-            "done" -> "✅ Kaam ho gaya!"
+            "done" -> "✅ Kaj hoyeche!"
             else -> "❓ Unknown action: ${action.action}"
         }
     }

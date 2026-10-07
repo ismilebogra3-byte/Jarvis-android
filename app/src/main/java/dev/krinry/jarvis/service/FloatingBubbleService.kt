@@ -38,6 +38,7 @@ import androidx.core.app.NotificationCompat
 import dev.krinry.jarvis.MainActivity
 import dev.krinry.jarvis.R
 import dev.krinry.jarvis.agent.AgentLlmEngine
+import dev.krinry.jarvis.agent.AgentTtsManager
 import dev.krinry.jarvis.ai.GroqApiClient
 import kotlinx.coroutines.*
 import java.io.File
@@ -72,9 +73,20 @@ class FloatingBubbleService : Service() {
         private const val SAMPLE_RATE = 16000
         private const val MAX_SUBTITLE_LINES = 5
 
+        // =========================
+        // Hello Nura Wake Word
+        // =========================
+        private const val WAKE_WORD = "hello nura"
+        private const val WAKE_RESPONSE = "জি বস"
+
         private val WAKE_WORDS = listOf(
-            "krinry", "cranary", "kri nri", "crinary", "cranery", "krinari", "jarvis",
-            "crinri", "grini", "krinry,", "jarvis,"
+            "hello nura",
+            "hello, nura",
+            "helo nura",
+            "hallo nura",
+            "hello noora",
+            "hello nur",
+            "nura"
         )
 
         @Volatile
@@ -86,12 +98,22 @@ class FloatingBubbleService : Service() {
     private var bubbleView: View? = null
     private var subtitleView: View? = null
     private var agentEngine: AgentLlmEngine? = null
+    private lateinit var wakeTtsManager: AgentTtsManager
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
     private var isListening = false
     private var isProcessingCommand = false
     private var recordingJob: Job? = null
     private var audioRecord: AudioRecord? = null
+
+    // Hello Nura wake-word state
+    @Volatile
+    private var wakeWordEnabled = true
+
+    @Volatile
+    private var isWakeListening = false
+
+    private var wakeListeningJob: Job? = null
     private val subtitleHistory = mutableListOf<String>()
 
     // Keep screen on
@@ -109,6 +131,8 @@ class FloatingBubbleService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+
+        wakeTtsManager = AgentTtsManager(applicationContext)
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         agentEngine = AgentLlmEngine(applicationContext)
         agentEngine?.onStatusUpdate = { status ->
@@ -119,6 +143,14 @@ class FloatingBubbleService : Service() {
                     stopThinkingAnimation()
                     playCompletionSound()
                     vibratePattern(longArrayOf(0, 80, 60, 80)) // success pattern
+
+                    // Part 5: Task complete -> return to Hello Nura standby.
+                    scope.launch {
+                        delay(800)
+                        if (!isProcessingCommand && !isListening && !isWakeListening) {
+                            startWakeWordListener()
+                        }
+                    }
                 } else if (status.startsWith("❌") || status.startsWith("⚠️") || status.startsWith("⏹")) {
                     isProcessingCommand = false
                     stopThinkingAnimation()
@@ -128,13 +160,22 @@ class FloatingBubbleService : Service() {
         }
         isRunning = true
         startForegroundNotification()
+
+        // Part 5: Start Hello Nura standby automatically.
+        scope.launch {
+            delay(700)
+            if (!isProcessingCommand && !isListening && !isWakeListening) {
+                startWakeWordListener()
+            }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP -> { stopSelf(); return START_NOT_STICKY }
         }
-        if (bubbleView == null) createBubble()
+        // Part 4: Bubble/icon UI disabled.
+        // Jarvis now runs voice-only in the background.
         return START_STICKY
     }
 
@@ -557,6 +598,204 @@ class FloatingBubbleService : Service() {
     // === Whisper STT Recording ===
     // =========================================================================
 
+    // =========================================================================
+    // === Hello Nura Wake Listener ===
+    // =========================================================================
+
+    private fun startWakeWordListener() {
+        if (!wakeWordEnabled || isWakeListening || isListening || isProcessingCommand) {
+            return
+        }
+
+        if (!AutoAgentService.isRunning()) {
+            addSubtitle("Accessibility Service on korun")
+            return
+        }
+
+        isWakeListening = true
+        addSubtitle("Nura standby te ache")
+
+        wakeListeningJob = scope.launch(Dispatchers.IO) {
+            try {
+                val bufferSize = AudioRecord.getMinBufferSize(
+                    SAMPLE_RATE,
+                    AudioFormat.CHANNEL_IN_MONO,
+                    AudioFormat.ENCODING_PCM_16BIT
+                )
+
+                if (bufferSize <= 0) {
+                    withContext(Dispatchers.Main) {
+                        addSubtitle("Mic setup korte parini")
+                    }
+                    return@launch
+                }
+
+                while (isWakeListening && wakeWordEnabled) {
+
+                    // Small chunk for wake-word detection.
+                    val chunkSamples = SAMPLE_RATE * 3
+                    val audioBuffer = ArrayList<Short>(chunkSamples)
+
+                    val recorder = AudioRecord(
+                        MediaRecorder.AudioSource.MIC,
+                        SAMPLE_RATE,
+                        AudioFormat.CHANNEL_IN_MONO,
+                        AudioFormat.ENCODING_PCM_16BIT,
+                        bufferSize * 2
+                    )
+
+                    if (recorder.state != AudioRecord.STATE_INITIALIZED) {
+                        recorder.release()
+
+                        withContext(Dispatchers.Main) {
+                            addSubtitle("Mic available nei")
+                        }
+
+                        break
+                    }
+
+                    audioRecord = recorder
+                    recorder.startRecording()
+
+                    val buffer = ShortArray(bufferSize)
+
+                    while (
+                        isWakeListening &&
+                        wakeWordEnabled &&
+                        audioBuffer.size < chunkSamples
+                    ) {
+                        val read = recorder.read(
+                            buffer,
+                            0,
+                            buffer.size
+                        )
+
+                        if (read > 0) {
+                            for (i in 0 until read) {
+                                audioBuffer.add(buffer[i])
+                            }
+                        }
+                    }
+
+                    try {
+                        recorder.stop()
+                    } catch (_: Exception) {
+                    }
+
+                    recorder.release()
+                    audioRecord = null
+
+                    if (!isWakeListening || audioBuffer.isEmpty()) {
+                        continue
+                    }
+
+                    val wavFile = saveAsWav(audioBuffer)
+
+                    if (wavFile == null) {
+                        continue
+                    }
+
+                    // IMPORTANT:
+                    // Explicitly use Bengali for Groq Whisper.
+                    val transcript = try {
+                        GroqApiClient.transcribeAudio(
+                            applicationContext,
+                            wavFile,
+                            "bn"
+                        )
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Wake transcription failed", e)
+                        null
+                    }
+
+                    wavFile.delete()
+
+                    if (!transcript.isNullOrBlank()) {
+                        val text = transcript.trim().lowercase()
+
+                        Log.d(TAG, "Wake listener heard: $text")
+
+                        val detected = WAKE_WORDS.any { wake ->
+                            text.contains(wake.lowercase())
+                        }
+
+                        if (detected) {
+                            withContext(Dispatchers.Main) {
+                                onWakeWordDetected()
+                            }
+
+                            break
+                        }
+                    }
+                }
+
+            } catch (e: Exception) {
+                Log.e(TAG, "Wake listener failed", e)
+
+                withContext(Dispatchers.Main) {
+                    addSubtitle("Wake listener error")
+                }
+
+            } finally {
+                try {
+                    audioRecord?.stop()
+                } catch (_: Exception) {
+                }
+
+                try {
+                    audioRecord?.release()
+                } catch (_: Exception) {
+                }
+
+                audioRecord = null
+                isWakeListening = false
+            }
+        }
+    }
+
+    private fun stopWakeWordListener() {
+        isWakeListening = false
+        wakeListeningJob?.cancel()
+        wakeListeningJob = null
+
+        try {
+            audioRecord?.stop()
+        } catch (_: Exception) {
+        }
+
+        try {
+            audioRecord?.release()
+        } catch (_: Exception) {
+        }
+
+        audioRecord = null
+    }
+
+    private fun onWakeWordDetected() {
+        if (isProcessingCommand || isListening) {
+            return
+        }
+
+        stopWakeWordListener()
+
+        vibrateShort()
+
+        // Status is Banglish.
+        addSubtitle("Hello Nura detect hoyeche")
+
+        // Bengali voice response.
+        // Start command recording only after "জি বস" finishes.
+        wakeTtsManager.speak(WAKE_RESPONSE) {
+            scope.launch {
+                delay(250)
+
+                if (!isProcessingCommand && !isListening && !isWakeListening) {
+                    startWhisperRecording()
+                }
+            }
+        }
+    }
+
     private fun startWhisperRecording() {
         if (!AutoAgentService.isRunning()) {
             addSubtitle("❌ Enable Accessibility Service first!")
@@ -605,7 +844,7 @@ class FloatingBubbleService : Service() {
                 val wavFile = saveAsWav(audioBuffer)
                 if (wavFile == null) { withContext(Dispatchers.Main) { addSubtitle("❌ Failed to save audio") }; return@launch }
 
-                val transcript = GroqApiClient.transcribeAudio(applicationContext, wavFile, null)
+                val transcript = GroqApiClient.transcribeAudio(applicationContext, wavFile, "bn")
                 wavFile.delete()
 
                 withContext(Dispatchers.Main) {

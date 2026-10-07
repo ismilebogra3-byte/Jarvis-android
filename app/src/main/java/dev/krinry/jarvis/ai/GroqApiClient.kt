@@ -110,7 +110,7 @@ object GroqApiClient {
     // =========================================================================
 
     suspend fun transcribeAudio(
-        context: Context, audioFile: File, language: String? = null
+        context: Context, audioFile: File, language: String? = "bn"
     ): String? = withContext(Dispatchers.IO) {
         try {
             // STT always uses Groq (only provider with Whisper)

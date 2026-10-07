@@ -13,8 +13,8 @@ import kotlinx.coroutines.*
  *
  * Key fixes:
  * - VERIFICATION: Agent re-reads screen after "done" to confirm task actually completed
- * - Hindi status updates shown to user
- * - Agent speaks Hindi summary of what it's doing
+ * - Bengali status updates shown to user
+ * - Agent speaks Bengali summary of what it's doing
  * - Coordinates (cx, cy) in UI tree for gesture-based tap
  * - When message typed, agent must find and click SEND button before saying done
  */
@@ -31,7 +31,7 @@ class AgentLlmEngine(private val context: Context) {
         // Compressed system prompt: ~600 tokens vs ~1800 before (67% savings)
         private const val SYSTEM_PROMPT = """You are Krinry, AI phone assistant. Full device control via AccessibilityService. Respond ONLY in valid JSON, no markdown.
 
-ACTIONS (JSON format: {"action":"X","speech":"Hindi or empty","reason":"why","status":"in_progress|done"} + action-specific fields):
+ACTIONS (JSON format: {"action":"X","speech":"Bengali or empty","reason":"why","status":"in_progress|done"} + action-specific fields):
 - open_app: +app_name | click: +node_id | type: +node_id,text | tap_xy: +x,y | long_press: +x,y
 - scroll_down/scroll_up | swipe: +text(left|right|up|down) | back/home/recent
 - open_url: +url | screenshot | copy | paste: +node_id | select_all | open_notifications
@@ -40,7 +40,7 @@ ACTIONS (JSON format: {"action":"X","speech":"Hindi or empty","reason":"why","st
 UI nodes: i=id,t=text,d=desc,T=type(B=Button,E=EditText,IB=ImageButton,TV=TextView,IV=ImageView),x=centerX,y=centerY,c=clickable,e=editable,s=scrollable. Use node_id(i) for click/type. Fallback: tap_xy with x,y coords.
 
 RULES:
-1. Speech: Hindi only. First step=short confirm, middle=empty, done=completion msg, error=Hindi explain
+1. Speech: Bengali only. First step=short confirm, middle=empty, done=completion msg, error=Bengali explain
 2. Apps: ALWAYS open_app first, never scroll home. Use exact name: "WhatsApp","YouTube","Chrome"
 3. NEVER say done early. After type→MUST click Send button→verify→done. Complete full task inside app
 4. Node missing? scroll→tap_xy→search by text. Give up only after trying all
@@ -138,9 +138,9 @@ RULES:
                 continue
             }
 
-            // 7. Hindi status update with reason
+            // 7. Bengali status update with reason
             val reasonText = action.reason ?: action.action
-            onStatusUpdate?.invoke("⚡ ${getHindiAction(action.action)}: $reasonText")
+            onStatusUpdate?.invoke("⚡ ${getBanglaAction(action.action)}: $reasonText")
 
             // 8. TTS speak (only on first, done, or error)
             action.speech?.takeIf { it.isNotBlank() }?.let { speechText ->
@@ -149,7 +149,7 @@ RULES:
 
             // 9. Check if done
             if (action.status == "done" || action.action == "done") {
-                onStatusUpdate?.invoke("✅ Ho gaya: ${action.reason ?: "Task complete"}")
+                onStatusUpdate?.invoke("✅ Kaj hoyeche: ${action.reason ?: "Task complete"}")
                 delay(2500) // TTS finish hone do
                 return
             }
@@ -173,34 +173,34 @@ RULES:
             delay(SCREEN_SETTLE_DELAY)
         }
 
-        onStatusUpdate?.invoke("⚠️ Bahut steps ho gaye ($MAX_ITERATIONS)")
-        ttsManager.speak("Kaam time pe complete nahi ho paya. Chhota command try karo.")
+        onStatusUpdate?.invoke("⚠️ Onek steps hoye geche ($MAX_ITERATIONS)")
+        ttsManager.speak("কাজটি সময়মতো শেষ করা যায়নি। ছোট একটি কমান্ড চেষ্টা করুন।")
     }
 
     /**
-     * Hindi action name for status display.
+     * Bengali action name for status display.
      */
-    private fun getHindiAction(action: String): String {
+    private fun getBanglaAction(action: String): String {
         return when (action) {
-            "click" -> "Click kar raha hoon"
-            "type" -> "Type kar raha hoon"
-            "scroll_down" -> "Neeche scroll kar raha hoon"
-            "scroll_up" -> "Upar scroll kar raha hoon"
-            "back" -> "Back ja raha hoon"
-            "home" -> "Home ja raha hoon"
-            "recent" -> "Recent apps dekh raha hoon"
-            "open_app" -> "App khol raha hoon"
-            "open_url" -> "URL khol raha hoon"
-            "tap_xy" -> "Tap kar raha hoon"
-            "long_press" -> "Long press kar raha hoon"
-            "swipe" -> "Swipe kar raha hoon"
-            "screenshot" -> "Screenshot le raha hoon"
-            "copy" -> "Copy kar raha hoon"
-            "paste" -> "Paste kar raha hoon"
-            "select_all" -> "Sab select kar raha hoon"
-            "open_notifications" -> "Notifications dekh raha hoon"
-            "wait" -> "Ruk raha hoon"
-            "done" -> "Ho gaya"
+            "click" -> "ক্লিক করছি"
+            "type" -> "টাইপ করছি"
+            "scroll_down" -> "নিচে স্ক্রল করছি"
+            "scroll_up" -> "উপরে স্ক্রল করছি"
+            "back" -> "পেছনে যাচ্ছি"
+            "home" -> "হোমে যাচ্ছি"
+            "recent" -> "সাম্প্রতিক অ্যাপ দেখছি"
+            "open_app" -> "অ্যাপ খুলছি"
+            "open_url" -> "URL খুলছি"
+            "tap_xy" -> "ট্যাপ করছি"
+            "long_press" -> "লং প্রেস করছি"
+            "swipe" -> "সোয়াইপ করছি"
+            "screenshot" -> "স্ক্রিনশট নিচ্ছি"
+            "copy" -> "কপি করছি"
+            "paste" -> "পেস্ট করছি"
+            "select_all" -> "সব নির্বাচন করছি"
+            "open_notifications" -> "নোটিফিকেশন দেখছি"
+            "wait" -> "অপেক্ষা করছি"
+            "done" -> "হয়ে গেছে"
             else -> action
         }
     }

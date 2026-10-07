@@ -160,7 +160,7 @@ object SecureKeyStore {
     }
 
     fun getDefaultLanguage(context: Context): String {
-        return getEncryptedPrefs(context).getString(KEY_AI_LANGUAGE, "hi") ?: "hi"
+        return getEncryptedPrefs(context).getString(KEY_AI_LANGUAGE, "bn") ?: "bn"
     }
 
     fun setUseEdgeFunction(context: Context, useEdge: Boolean) {
