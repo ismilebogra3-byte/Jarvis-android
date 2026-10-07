@@ -2,11 +2,11 @@ name: Quick Build APK
 
 on:
   workflow_dispatch:
-    description: 'Build APK from current source code (no config changes)'
 
 jobs:
   build:
     runs-on: ubuntu-latest
+
     permissions:
       contents: write
 
@@ -26,11 +26,17 @@ jobs:
       - name: Build Debug APK
         run: ./gradlew assembleDebug
 
+      - name: Show APK
+        run: |
+          echo "=== APK FILES ==="
+          find app/build/outputs -type f -name "*.apk" -print
+
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
         with:
           name: quick-build-apk
           path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
@@ -39,14 +45,12 @@ jobs:
           name: Quick Build #${{ github.run_number }}
           files: app/build/outputs/apk/debug/*.apk
           body: |
-            ## ⚡ Quick Build
-            
-            Built directly from source code without any modifications.
-            
-            - **Branch:** ${{ github.ref_name }}
-            - **Commit:** ${{ github.sha }}
-            - **Build Type:** Debug
-            
-            > This APK contains exactly what's in the repository.
+            ## Quick Build APK
+
+            Built directly from the current source code.
+
+            - Branch: ${{ github.ref_name }}
+            - Commit: ${{ github.sha }}
+            - Build Type: Debug
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
