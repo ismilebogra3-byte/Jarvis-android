@@ -164,7 +164,13 @@ class FloatingBubbleService : Service() {
         // Part 5: Start Hello Nura standby automatically.
         scope.launch {
             delay(700)
-            if (!isProcessingCommand && !isListening && !isWakeListening) {
+
+            // Hello Nura standby auto-start.
+            // Bubble UI remains OFF.
+            if (!isProcessingCommand && !isListening) {
+                if (isWakeListening) {
+                    stopWakeWordListener()
+                }
                 startWakeWordListener()
             }
         }
