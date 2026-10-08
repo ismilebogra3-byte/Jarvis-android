@@ -1,9 +1,13 @@
 package dev.krinry.jarvis.agent
 
+import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.provider.AlarmClock
+import android.provider.ContactsContract
+import android.view.KeyEvent
 import android.util.Log
 import dev.krinry.jarvis.service.AutoAgentService
 import org.json.JSONObject
@@ -27,6 +31,7 @@ object ActionExecutor {
         val nodeId: Int?,
         val text: String?,
         val appName: String?,
+        val contactName: String?,
         val url: String?,
         val speech: String?,
         val status: String,
@@ -49,6 +54,7 @@ object ActionExecutor {
                 nodeId = if (obj.has("node_id") && !obj.isNull("node_id")) obj.optInt("node_id", -1) else null,
                 text = obj.optString("text", "").takeIf { it.isNotEmpty() },
                 appName = obj.optString("app_name", "").takeIf { it.isNotEmpty() },
+                contactName = obj.optString("contact_name", "").takeIf { it.isNotEmpty() },
                 url = obj.optString("url", "").takeIf { it.isNotEmpty() },
                 speech = obj.optString("speech", "").takeIf { it.isNotEmpty() },
                 status = obj.optString("status", "in_progress"),
@@ -123,6 +129,29 @@ object ActionExecutor {
             "paste" -> executePaste(action, nodes, service)
             "select_all" -> executeSelectAll(action, nodes, service)
             "open_notifications" -> { service.openNotifications(); "✅ Notifications khol diya" }
+
+            // Phase 1A: Contacts / Phone / SMS
+            "find_contact" -> findContact(action, service)
+            "call_contact" -> callContact(action, service)
+            "send_sms" -> sendSms(action, service)
+
+            // Phase 2 — Calendar / Alarm / Timer / Maps / Camera
+            "open_calendar" -> openCalendar(service)
+            "set_alarm" -> setAlarm(action, service)
+            "set_timer" -> setTimer(action, service)
+            "open_maps" -> openMaps(action, service)
+            "open_camera" -> openCamera(service)
+
+            // Phase 2 — Media
+            "media_play_pause" -> mediaKey(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, service)
+            "media_next" -> mediaKey(KeyEvent.KEYCODE_MEDIA_NEXT, service)
+            "media_previous" -> mediaKey(KeyEvent.KEYCODE_MEDIA_PREVIOUS, service)
+
+            // Phase 2 — Share / Email / Downloads
+            "share_text" -> shareText(action, service)
+            "open_email" -> openEmail(action, service)
+            "open_downloads" -> openDownloads(service)
+
             "wait" -> "⏳ Screen load ho raha hai..."
             "done" -> "✅ Kaj hoyeche!"
             else -> "❓ Unknown action: ${action.action}"
@@ -433,6 +462,369 @@ object ActionExecutor {
         }
         return "❌ Koi text field focused nahi hai"
     }
+
+
+    // =========================================================================
+    // Phase 2 — Calendar / Alarm / Timer / Maps / Camera / Media / Share
+    // =========================================================================
+
+    private fun openCalendar(
+        service: AutoAgentService
+    ): String {
+        return try {
+            val intent = Intent(Intent.ACTION_MAIN).apply {
+                addCategory(Intent.CATEGORY_APP_CALENDAR)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+
+            service.applicationContext.startActivity(intent)
+            "📅 Calendar kholchi"
+        } catch (e: Exception) {
+            Log.e(TAG, "Calendar open failed", e)
+            "❌ Calendar app paoa jayni"
+        }
+    }
+
+    private fun setAlarm(
+        action: AgentAction,
+        service: AutoAgentService
+    ): String {
+        return try {
+            val intent = Intent(AlarmClock.ACTION_SET_ALARM).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
+                action.text?.takeIf { it.isNotBlank() }?.let {
+                    putExtra(AlarmClock.EXTRA_MESSAGE, it)
+                }
+
+                if (action.x != null) {
+                    putExtra(AlarmClock.EXTRA_HOUR, action.x)
+                }
+
+                if (action.y != null) {
+                    putExtra(AlarmClock.EXTRA_MINUTES, action.y)
+                }
+            }
+
+            service.applicationContext.startActivity(intent)
+            "⏰ Alarm set korar screen khulechi"
+        } catch (e: Exception) {
+            Log.e(TAG, "Alarm open failed", e)
+            "❌ Alarm app khola jayni"
+        }
+    }
+
+    private fun setTimer(
+        action: AgentAction,
+        service: AutoAgentService
+    ): String {
+        return try {
+            val seconds = action.x
+                ?: action.text?.trim()?.toIntOrNull()
+
+            val intent = Intent(AlarmClock.ACTION_SET_TIMER).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
+                if (seconds != null && seconds > 0) {
+                    putExtra(AlarmClock.EXTRA_LENGTH, seconds)
+                }
+
+                action.text?.takeIf { it.isNotBlank() }?.let {
+                    putExtra(AlarmClock.EXTRA_MESSAGE, it)
+                }
+            }
+
+            service.applicationContext.startActivity(intent)
+            "⏱️ Timer screen khulechi"
+        } catch (e: Exception) {
+            Log.e(TAG, "Timer open failed", e)
+            "❌ Timer app khola jayni"
+        }
+    }
+
+    private fun openMaps(
+        action: AgentAction,
+        service: AutoAgentService
+    ): String {
+        return try {
+            val query = action.text
+                ?: action.url
+                ?: return "❌ Maps er location/search deya hoyni"
+
+            val uri = Uri.parse(
+                "geo:0,0?q=${Uri.encode(query)}"
+            )
+
+            val intent = Intent(Intent.ACTION_VIEW, uri).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+
+            service.applicationContext.startActivity(intent)
+            "🗺️ Maps khulechi"
+        } catch (e: Exception) {
+            Log.e(TAG, "Maps open failed", e)
+            "❌ Maps khola jayni"
+        }
+    }
+
+    private fun openCamera(
+        service: AutoAgentService
+    ): String {
+        return try {
+            val intent = Intent("android.media.action.IMAGE_CAPTURE").apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+
+            service.applicationContext.startActivity(intent)
+            "📷 Camera khulechi"
+        } catch (e: Exception) {
+            Log.e(TAG, "Camera open failed", e)
+            "❌ Camera khola jayni"
+        }
+    }
+
+    private fun mediaKey(
+        keyCode: Int,
+        service: AutoAgentService
+    ): String {
+        return try {
+            val audioManager =
+                service.getSystemService(android.content.Context.AUDIO_SERVICE)
+                    as android.media.AudioManager
+
+            audioManager.dispatchMediaKeyEvent(
+                KeyEvent(KeyEvent.ACTION_DOWN, keyCode)
+            )
+
+            audioManager.dispatchMediaKeyEvent(
+                KeyEvent(KeyEvent.ACTION_UP, keyCode)
+            )
+
+            when (keyCode) {
+                KeyEvent.KEYCODE_MEDIA_NEXT -> "⏭️ পরের গান"
+                KeyEvent.KEYCODE_MEDIA_PREVIOUS -> "⏮️ আগের গান"
+                else -> "▶️ Media play/pause"
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Media control failed", e)
+            "❌ Media control kaj koreni"
+        }
+    }
+
+    private fun shareText(
+        action: AgentAction,
+        service: AutoAgentService
+    ): String {
+        val text = action.text
+            ?: return "❌ Share korar text deya hoyni"
+
+        return try {
+            val intent = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_TEXT, text)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+
+            val chooser = Intent.createChooser(intent, "Share with").apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+
+            service.applicationContext.startActivity(chooser)
+            "📤 Share menu khulechi"
+        } catch (e: Exception) {
+            Log.e(TAG, "Share failed", e)
+            "❌ Share menu khola jayni"
+        }
+    }
+
+    private fun openEmail(
+        action: AgentAction,
+        service: AutoAgentService
+    ): String {
+        return try {
+            val uri = Uri.parse(
+                "mailto:${action.contactName ?: ""}"
+            )
+
+            val intent = Intent(Intent.ACTION_SENDTO, uri).apply {
+                action.text?.takeIf { it.isNotBlank() }?.let {
+                    putExtra(Intent.EXTRA_TEXT, it)
+                }
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+
+            service.applicationContext.startActivity(intent)
+            "📧 Email app khulechi"
+        } catch (e: Exception) {
+            Log.e(TAG, "Email open failed", e)
+            "❌ Email app khola jayni"
+        }
+    }
+
+    private fun openDownloads(
+        service: AutoAgentService
+    ): String {
+        return try {
+            val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                type = "*/*"
+                addCategory(Intent.CATEGORY_OPENABLE)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+
+            service.applicationContext.startActivity(intent)
+            "📥 File/Downloads screen khulechi"
+        } catch (e: Exception) {
+            Log.e(TAG, "Downloads open failed", e)
+            "❌ File manager screen khola jayni"
+        }
+    }
+
+    // =========================================================================
+    // Phase 1A — Contacts / Phone / SMS
+    // =========================================================================
+
+    private data class ContactResult(
+        val name: String,
+        val number: String
+    )
+
+    private fun findContact(
+        action: AgentAction,
+        service: AutoAgentService
+    ): String {
+        val query = action.contactName
+            ?: action.text
+            ?: return "❌ Contact er naam deya hoyni"
+
+        val contact = resolveContact(service, query)
+            ?: return "❌ '$query' naam er contact paoa jayni"
+
+        return "👤 ${contact.name}: ${contact.number}"
+    }
+
+    private fun callContact(
+        action: AgentAction,
+        service: AutoAgentService
+    ): String {
+        val query = action.contactName
+            ?: action.text
+            ?: return "❌ Contact er naam deya hoyni"
+
+        val contact = resolveContact(service, query)
+            ?: return "❌ '$query' naam er contact paoa jayni"
+
+        return try {
+            val intent = Intent(
+                Intent.ACTION_DIAL,
+                Uri.parse("tel:${Uri.encode(contact.number)}")
+            ).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+
+            service.applicationContext.startActivity(intent)
+
+            "📞 ${contact.name} er number dialer e khulechi"
+        } catch (e: Exception) {
+            Log.e(TAG, "Dialer open failed", e)
+            "❌ Phone dialer khola jayni"
+        }
+    }
+
+    private fun sendSms(
+        action: AgentAction,
+        service: AutoAgentService
+    ): String {
+        val contactName = action.contactName
+            ?: return "❌ SMS contact er naam deya hoyni"
+
+        val message = action.text
+            ?: return "❌ SMS message deya hoyni"
+
+        val contact = resolveContact(service, contactName)
+            ?: return "❌ '$contactName' naam er contact paoa jayni"
+
+        return try {
+            val intent = Intent(
+                Intent.ACTION_SENDTO,
+                Uri.parse("smsto:${Uri.encode(contact.number)}")
+            ).apply {
+                putExtra("sms_body", message)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+
+            service.applicationContext.startActivity(intent)
+
+            "💬 ${contact.name} er jonno SMS ready korechi"
+        } catch (e: Exception) {
+            Log.e(TAG, "SMS app open failed", e)
+            "❌ SMS app khola jayni"
+        }
+    }
+
+    private fun resolveContact(
+        service: AutoAgentService,
+        query: String
+    ): ContactResult? {
+
+        val context = service.applicationContext
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
+            context.checkSelfPermission(
+                Manifest.permission.READ_CONTACTS
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            Log.w(TAG, "READ_CONTACTS permission missing")
+            return null
+        }
+
+        return try {
+            val projection = arrayOf(
+                ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
+                ContactsContract.CommonDataKinds.Phone.NUMBER
+            )
+
+            context.contentResolver.query(
+                ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+                projection,
+                "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} LIKE ?",
+                arrayOf("%${query.trim()}%"),
+                "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} ASC"
+            )?.use { cursor ->
+
+                if (!cursor.moveToFirst()) {
+                    return null
+                }
+
+                val nameIndex = cursor.getColumnIndex(
+                    ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME
+                )
+
+                val numberIndex = cursor.getColumnIndex(
+                    ContactsContract.CommonDataKinds.Phone.NUMBER
+                )
+
+                if (nameIndex < 0 || numberIndex < 0) {
+                    return null
+                }
+
+                val name = cursor.getString(nameIndex)
+                val number = cursor.getString(numberIndex)
+
+                if (name.isNullOrBlank() || number.isNullOrBlank()) {
+                    null
+                } else {
+                    ContactResult(name, number)
+                }
+            }
+        } catch (e: SecurityException) {
+            Log.e(TAG, "Contacts permission denied", e)
+            null
+        } catch (e: Exception) {
+            Log.e(TAG, "Contact lookup failed", e)
+            null
+        }
+    }
+
 
     private fun executeSelectAll(action: AgentAction, nodes: List<UiTreeExtractor.UiNode>, service: AutoAgentService): String {
         val focusedNode = service.getRootNode()?.findFocus(android.view.accessibility.AccessibilityNodeInfo.FOCUS_INPUT)

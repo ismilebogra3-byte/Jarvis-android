@@ -212,6 +212,119 @@ object GroqApiClient {
     }
 
     // =========================================================================
+    // === P3C — Vision / Screenshot Analysis
+    // =========================================================================
+
+    suspend fun analyzeScreenshot(
+        context: Context,
+        imageBase64: String,
+        userPrompt: String =
+            "Analyze this Android screenshot. Identify visible text, buttons, input fields, menus, icons and useful UI elements. Return concise actionable information."
+    ): String? = withContext(Dispatchers.IO) {
+        try {
+            checkAndThrottleRateLimit(context)
+
+            val provider = getActiveProvider(context)
+            val apiKey = provider.getApiKey(context)
+                ?: return@withContext null
+
+            val model = SecureKeyStore.getPrimaryModel(context)
+                .ifEmpty { provider.defaultModel }
+
+            val content = JSONArray().apply {
+                put(
+                    JSONObject().apply {
+                        put("type", "text")
+                        put("text", userPrompt)
+                    }
+                )
+                put(
+                    JSONObject().apply {
+                        put("type", "image_url")
+                        put(
+                            "image_url",
+                            JSONObject().apply {
+                                put(
+                                    "url",
+                                    "data:image/png;base64,$imageBase64"
+                                )
+                            }
+                        )
+                    }
+                )
+            }
+
+            val messages = JSONArray().apply {
+                put(
+                    JSONObject().apply {
+                        put("role", "user")
+                        put("content", content)
+                    }
+                )
+            }
+
+            val payload = JSONObject().apply {
+                put("model", model)
+                put("messages", messages)
+                put("temperature", 0.2)
+                put("max_tokens", 800)
+            }
+
+            Log.d(
+                TAG,
+                "P3C Vision: $model via ${provider.displayName}"
+            )
+
+            val requestBuilder = Request.Builder()
+                .url("${provider.baseUrl}/chat/completions")
+                .addHeader("Authorization", "Bearer $apiKey")
+                .addHeader("Content-Type", "application/json")
+                .post(
+                    payload.toString()
+                        .toRequestBody("application/json".toMediaType())
+                )
+
+            provider.extraHeaders().forEach { (key, value) ->
+                requestBuilder.addHeader(key, value)
+            }
+
+            val response = client
+                .newCall(requestBuilder.build())
+                .execute()
+
+            if (!response.isSuccessful) {
+                val errorBody = response.body?.string() ?: ""
+                Log.e(
+                    TAG,
+                    "P3C Vision error: ${response.code} ${errorBody.take(300)}"
+                )
+                return@withContext null
+            }
+
+            val body = response.body?.string()
+                ?: return@withContext null
+
+            JSONObject(body)
+                .optJSONArray("choices")
+                ?.let { choices ->
+                    if (choices.length() > 0) {
+                        choices
+                            .getJSONObject(0)
+                            .optJSONObject("message")
+                            ?.optString("content")
+                            ?.takeIf { it.isNotBlank() }
+                    } else {
+                        null
+                    }
+                }
+
+        } catch (e: Exception) {
+            Log.e(TAG, "P3C Vision failed", e)
+            null
+        }
+    }
+
+    // =========================================================================
     // === Agent Chat — with rate limiting, retry, fallback ===
     // =========================================================================
 

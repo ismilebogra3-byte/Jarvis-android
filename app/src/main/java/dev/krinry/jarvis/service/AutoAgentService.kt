@@ -3,10 +3,15 @@ package dev.krinry.jarvis.service
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.graphics.Path
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.util.Base64
+import java.io.ByteArrayOutputStream
 import android.graphics.Rect
 import android.os.Build
 import android.util.DisplayMetrics
 import android.util.Log
+import android.view.Display
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 
@@ -60,6 +65,85 @@ class AutoAgentService : AccessibilityService() {
         instance = null
         Log.d(TAG, "AutoAgentService destroyed")
         super.onDestroy()
+    }
+
+
+    /**
+     * P3B: Capture the current screen as a JPEG Base64 string.
+     *
+     * Android 11+ AccessibilityService screenshot API.
+     * Returns null when the service/API cannot capture the screen.
+     */
+    fun captureScreenBase64(callback: (String?) -> Unit) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            callback(null)
+            return
+        }
+
+        try {
+            takeScreenshot(
+                Display.DEFAULT_DISPLAY,
+                mainExecutor,
+                object : TakeScreenshotCallback {
+                    override fun onSuccess(result: ScreenshotResult) {
+                        try {
+                            val hardwareBuffer = result.hardwareBuffer
+                            val colorSpace = result.colorSpace
+
+                            val bitmap = Bitmap.wrapHardwareBuffer(
+                                hardwareBuffer,
+                                colorSpace
+                            )
+
+                            if (bitmap == null) {
+                                hardwareBuffer.close()
+                                callback(null)
+                                return
+                            }
+
+                            val copy = bitmap.copy(
+                                Bitmap.Config.ARGB_8888,
+                                false
+                            )
+
+                            bitmap.recycle()
+                            hardwareBuffer.close()
+
+                            val output = ByteArrayOutputStream()
+
+                            copy.compress(
+                                Bitmap.CompressFormat.JPEG,
+                                70,
+                                output
+                            )
+
+                            copy.recycle()
+
+                            val base64 = Base64.encodeToString(
+                                output.toByteArray(),
+                                Base64.NO_WRAP
+                            )
+
+                            callback(base64)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Screenshot processing failed", e)
+                            callback(null)
+                        }
+                    }
+
+                    override fun onFailure(errorCode: Int) {
+                        Log.e(
+                            TAG,
+                            "Screenshot failed: errorCode=$errorCode"
+                        )
+                        callback(null)
+                    }
+                }
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Screenshot capture failed", e)
+            callback(null)
+        }
     }
 
     // === Public API ===
