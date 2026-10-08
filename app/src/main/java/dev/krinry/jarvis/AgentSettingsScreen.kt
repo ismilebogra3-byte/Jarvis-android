@@ -83,7 +83,17 @@ fun AgentSettingsScreen(onBack: () -> Unit) {
     var modelPickerTarget by remember { mutableStateOf("primary") }
     var providerExpanded by remember { mutableStateOf(false) }
 
-    LaunchedEffect(Unit) { kotlinx.coroutines.delay(500); refreshKey++ }
+    LaunchedEffect(Unit) {
+    kotlinx.coroutines.delay(500)
+    refreshKey++
+
+    // Voice-only background mode:
+    // Bubble UI stays OFF, but Hello Nura service starts automatically
+    // whenever the Jarvis Agent is enabled.
+    if (SecureKeyStore.isAgentEnabled(context)) {
+        startBubbleService(context)
+    }
+}
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -129,7 +139,7 @@ fun AgentSettingsScreen(onBack: () -> Unit) {
                         Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
                             Text(if (agentEnabled) "Agent Active" else "Agent Offline", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
-                            Text(if (agentEnabled) "Tap bubble to give command" else "Turn on to start", color = Color.White.copy(alpha = 0.65f), fontSize = 12.sp)
+                            Text(if (agentEnabled) "Hello Nura voice standby active" else "Turn on to start voice assistant", color = Color.White.copy(alpha = 0.65f), fontSize = 12.sp)
                         }
                         Switch(
                             checked = agentEnabled,
@@ -168,7 +178,7 @@ fun AgentSettingsScreen(onBack: () -> Unit) {
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        if (allReady) "✅ All set! Tap floating bubble to start." else "⚠️ Grant all permissions above.",
+                        if (allReady) "✅ All set! Say Hello Nura to start." else "⚠️ Grant all permissions above.",
                         fontSize = 13.sp, color = if (allReady) JarvisSuccess else JarvisError, textAlign = TextAlign.Center
                     )
                 }
@@ -249,7 +259,7 @@ fun AgentSettingsScreen(onBack: () -> Unit) {
                     if (selectedProviderId != "groq") {
                         Spacer(Modifier.height(8.dp))
                         Text(
-                            "💡 STT (voice) always uses Groq Whisper. Set Groq API key too for voice commands.",
+                            "💡 Voice uses Groq Whisper. Say Hello Nura to start a command.",
                             fontSize = 11.sp, color = JarvisWarning.copy(alpha = 0.8f)
                         )
                     }

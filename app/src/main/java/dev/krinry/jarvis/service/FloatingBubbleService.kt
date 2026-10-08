@@ -97,6 +97,7 @@ class FloatingBubbleService : Service() {
     private lateinit var windowManager: WindowManager
     private var bubbleView: View? = null
     private var subtitleView: View? = null
+    private var subtitleClearJob: Job? = null
     private var agentEngine: AgentLlmEngine? = null
     private lateinit var wakeTtsManager: AgentTtsManager
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
@@ -160,6 +161,10 @@ class FloatingBubbleService : Service() {
         }
         isRunning = true
         startForegroundNotification()
+
+    // Voice-only mode: subtitle overlay without bubble UI.
+    ensureSubtitleOverlay()
+
 
         // Part 5: Start Hello Nura standby automatically.
         scope.launch {
@@ -354,13 +359,67 @@ class FloatingBubbleService : Service() {
             overlayType,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
             PixelFormat.TRANSLUCENT
-        ).apply { gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL; y = dpToPx(80) }
+        ).apply {
+            gravity = Gravity.BOTTOM or Gravity.START
+            x = dpToPx(16)
+            y = dpToPx(80)
+        }
 
         windowManager.addView(subtitleContainer, subtitleParams)
         subtitleView = subtitleContainer
     }
 
     // =========================================================================
+
+    // Voice-only subtitle overlay. Bubble UI remains OFF.
+    private fun ensureSubtitleOverlay() {
+        if (subtitleView != null) return
+
+        try {
+            val overlayType =
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+                    WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                else
+                    WindowManager.LayoutParams.TYPE_PHONE
+
+            val subtitleContainer = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dpToPx(20), dpToPx(10), dpToPx(20), dpToPx(10))
+                background = createSubtitleBackground()
+                visibility = View.VISIBLE
+            }
+
+            val tv = TextView(this).apply {
+                tag = "subtitle_text"
+                textSize = 14f
+                setTextColor(Color.WHITE)
+                maxLines = MAX_SUBTITLE_LINES
+                ellipsize = TextUtils.TruncateAt.END
+                setShadowLayer(4f, 1f, 1f, Color.BLACK)
+            }
+
+            subtitleContainer.addView(tv)
+
+            val subtitleParams = WindowManager.LayoutParams(
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                overlayType,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+                PixelFormat.TRANSLUCENT
+            ).apply {
+                gravity = Gravity.BOTTOM or Gravity.START
+                x = dpToPx(16)
+                y = dpToPx(80)
+            }
+
+            windowManager.addView(subtitleContainer, subtitleParams)
+            subtitleView = subtitleContainer
+        } catch (e: Exception) {
+            Log.e("Jarvis", "Subtitle overlay failed", e)
+        }
+    }
+
     // === Long-Press Menu ===
     // =========================================================================
 
@@ -471,19 +530,25 @@ class FloatingBubbleService : Service() {
     // =========================================================================
 
     private fun addSubtitle(text: String) {
-        subtitleHistory.add(text)
-        while (subtitleHistory.size > MAX_SUBTITLE_LINES) subtitleHistory.removeAt(0)
+        ensureSubtitleOverlay()
+
+        subtitleClearJob?.cancel()
 
         subtitleView?.let { view ->
             if (view.visibility != View.VISIBLE) {
                 view.visibility = View.VISIBLE
-                val slideUp = TranslateAnimation(0f, 0f, dpToPx(30).toFloat(), 0f).apply { duration = 200 }
-                val fadeIn = AlphaAnimation(0f, 1f).apply { duration = 200 }
-                val animSet = AnimationSet(true).apply { addAnimation(slideUp); addAnimation(fadeIn) }
-                view.startAnimation(animSet)
             }
+
             val tv = view.findViewWithTag<TextView>("subtitle_text")
-            tv?.text = subtitleHistory.joinToString("\n")
+            tv?.text = text
+
+            subtitleClearJob = scope.launch {
+                delay(5000)
+                withContext(Dispatchers.Main) {
+                    tv?.text = ""
+                    view.visibility = View.GONE
+                }
+            }
         }
     }
 
