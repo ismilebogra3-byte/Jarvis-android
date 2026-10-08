@@ -44,6 +44,31 @@ class AgentTtsManager(private val context: Context) : TextToSpeech.OnInitListene
                 tts?.setLanguage(Locale.getDefault())
             }
 
+            // Prefer a female voice for Nura when the installed TTS engine provides one.
+            try {
+                val voices = tts?.voices.orEmpty()
+                val femaleVoice = voices.firstOrNull { voice ->
+                    val name = voice.name.lowercase()
+                    val voiceLocale = voice.locale
+                    voiceLocale.language == languageCode.lowercase() &&
+                        (name.contains("female") || name.contains("fem") || name.contains("woman"))
+                } ?: voices.firstOrNull { voice ->
+                    val name = voice.name.lowercase()
+                    val voiceLocale = voice.locale
+                    voiceLocale.language == languageCode.lowercase() &&
+                        !name.contains("male")
+                }
+
+                if (femaleVoice != null) {
+                    tts?.voice = femaleVoice
+                    Log.d(TAG, "Nura female voice selected: ${femaleVoice.name}")
+                } else {
+                    Log.w(TAG, "Female voice not available for $languageCode; keeping TTS default voice")
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Could not select female voice", e)
+            }
+
             // Route audio through ASSISTANT stream (plays through loudspeaker, not earpiece)
             val audioAttributes = AudioAttributes.Builder()
                 .setUsage(AudioAttributes.USAGE_ASSISTANT)

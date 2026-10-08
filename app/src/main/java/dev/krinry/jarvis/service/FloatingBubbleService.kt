@@ -78,7 +78,7 @@ class FloatingBubbleService : Service() {
         // Hello Nura Wake Word
         // =========================
         private const val WAKE_WORD = "hello nura"
-        private const val WAKE_RESPONSE = "জি বস"
+        private const val WAKE_RESPONSE = "জি বস, কী হেল্প করতে পারি?"
 
         private val WAKE_WORDS = listOf(
             "hello nura",
@@ -177,7 +177,18 @@ class FloatingBubbleService : Service() {
                 if (isWakeListening) {
                     stopWakeWordListener()
                 }
-                startWakeWordListener()
+
+                addSubtitle("Nura standby te ache")
+
+                // Nura startup greeting — spoken with the selected female TTS voice.
+                wakeTtsManager.speak("জি বস, কী হেল্প করতে পারি?") {
+                    scope.launch {
+                        delay(250)
+                        if (!isProcessingCommand && !isListening && !isWakeListening) {
+                            startWakeWordListener()
+                        }
+                    }
+                }
             }
         }
     }
