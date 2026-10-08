@@ -679,11 +679,8 @@ class FloatingBubbleService : Service() {
             return
         }
 
-        if (!AutoAgentService.isRunning()) {
-            addSubtitle("Accessibility Service on korun")
-            return
-        }
-
+        // Hello Nura voice standby does not require Accessibility Service.
+        // Accessibility is only needed later for device-control actions.
         isWakeListening = true
         addSubtitle("Nura standby te ache")
 
@@ -773,7 +770,7 @@ class FloatingBubbleService : Service() {
                         GroqApiClient.transcribeAudio(
                             applicationContext,
                             wavFile,
-                            "bn"
+                            "en"
                         )
                     } catch (e: Exception) {
                         Log.e(TAG, "Wake transcription failed", e)
@@ -787,7 +784,23 @@ class FloatingBubbleService : Service() {
 
                         Log.d(TAG, "Wake listener heard: $text")
 
-                        val detected = WAKE_WORDS.any { wake ->
+                        val wakeCandidates = listOf(
+                            "hello nura",
+                            "hello, nura",
+                            "helo nura",
+                            "hallo nura",
+                            "hello noora",
+                            "hello nur",
+                            "nura",
+                            "হ্যালো নুরা",
+                            "হ্যালো নূরা",
+                            "হেলো নুরা",
+                            "হেলো নূরা",
+                            "হ্যালো নুর",
+                            "হ্যালো নূর"
+                        )
+
+                        val detected = wakeCandidates.any { wake ->
                             text.contains(wake.lowercase())
                         }
 
@@ -869,11 +882,7 @@ class FloatingBubbleService : Service() {
     }
 
     private fun startWhisperRecording() {
-        if (!AutoAgentService.isRunning()) {
-            addSubtitle("❌ Enable Accessibility Service first!")
-            return
-        }
-
+        // Voice command recording is independent of Accessibility Service.
         isListening = true
         animateBubble(true)
         vibrateShort()
