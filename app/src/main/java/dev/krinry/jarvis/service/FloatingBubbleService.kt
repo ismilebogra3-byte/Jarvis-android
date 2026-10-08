@@ -149,7 +149,8 @@ class FloatingBubbleService : Service() {
                     // Part 5: Task complete -> return to Hello Nura standby.
                     scope.launch {
                         delay(800)
-                        if (!isProcessingCommand && !isListening && !isWakeListening) {
+                        if (!isProcessingCommand && !isListening) {
+                            stopWakeWordListener()
                             startWakeWordListener()
                         }
                     }
@@ -157,6 +158,15 @@ class FloatingBubbleService : Service() {
                     isProcessingCommand = false
                     stopThinkingAnimation()
                     vibrateShort()
+
+                    // Command failed/stopped -> return to Hello Nura standby.
+                    scope.launch {
+                        delay(800)
+                        if (!isProcessingCommand && !isListening) {
+                            stopWakeWordListener()
+                            startWakeWordListener()
+                        }
+                    }
                 }
             }
         }
